@@ -35,7 +35,8 @@ actor_ppo_max_token_len=$(((max_prompt_length + max_response_length) * 6 / 5))  
 infer_ppo_max_token_len=$(((max_prompt_length + max_response_length) * 3 / 2))  # 1.5x (7680)
 
 # Training parameters
-cd /home/ubuntu/verl
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "${SCRIPT_DIR}/../.."
 
 # Base training command
 BASE_CMD="python3 -m recipe.dapo.main_refine_dapo"

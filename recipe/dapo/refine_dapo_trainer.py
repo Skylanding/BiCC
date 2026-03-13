@@ -150,8 +150,8 @@ class RefineDAPOTrainer(RayDAPOTrainer):
             print("  • Advantages: A^+ = sqrt(n^-/n^+), A^- = -sqrt(n^+/n^-)")
             if self.use_contrastive_grpo_src:
                 print("  • Self-Reflective Conditioning: π(y | x, y_alt)")
-                print("    - Positive: log π(yw | x, yl)  (看到错误，生成正确)")
-                print("    - Negative: log π(yl | x, yw)  (看到正确，识别错误)")
+                print("    - Positive: log π(yw | x, yl)  (see wrong, generate correct)")
+                print("    - Negative: log π(yl | x, yw)  (see correct, identify wrong)")
             else:
                 print("  • Objective: J ∝ (1/n^+)Σlog π(o^+) - (1/n^-)Σlog π(o^-)")
                 print(f"  • Special case (n=2): J = log[π(o^+)/π(o^-)]  [Same as DPO!]")
@@ -452,7 +452,7 @@ class RefineDAPOTrainer(RayDAPOTrainer):
                     if self.use_contrastive_grpo_src:
                         device = batch.batch["token_level_rewards"].device
                         rollout_n = self.config.actor_rollout_ref.rollout.n
-                        # 将rollout_n传递给config，以便在create_self_reflective_pairs中使用
+                        # Pass rollout_n to config for use in create_self_reflective_pairs
                         self.cgrpo_src_config.rollout_n = rollout_n
                         # Compute advantages and create SRC pairs
                         batch, cgrpo_src_metrics = format_grpo_as_contrastive_with_src(
@@ -962,32 +962,32 @@ Key Insight:
 @dataclass
 class ContrastiveGRPOSRCConfig:
     """
-    Contrastive GRPO with Self-Reflective Conditioning配置
+Contrastive GRPO with Self-Reflective Conditioning configuration.
     
-    结合两种增强：
-    1. Contrastive advantages (从GRPO数学推导)
-    2. Self-reflective conditioning (从SRC)
+    Combines two enhancements:
+    1. Contrastive advantages (derived from GRPO math)
+    2. Self-reflective conditioning (from SRC)
     """
     
-    # 基础配置
+    # Base configuration
     enable: bool = True
     epsilon: float = 1e-8
     
-    # SRC配置
-    use_self_reflection: bool = True  # 是否启用self-reflection
-    symmetric_conditioning: bool = True  # 对称交叉条件
+    # SRC configuration
+    use_self_reflection: bool = True
+    symmetric_conditioning: bool = True
     
-    # 退化情况处理
+    # Degenerate case handling
     handle_uniform_rewards: bool = True
     uniform_reward_advantage: float = 0.0
     
-    # 日志
+    # Logging
     log_advantage_stats: bool = True
     log_src_metrics: bool = True
     verify_equivalence: bool = False
     
-    # Rollout配置（用于优化配对策略）
-    rollout_n: int = 2  # Rollout数量，当为2时只创建一对配对（符合数学假设）
+    # Rollout configuration (for optimizing pairing strategy)
+    rollout_n: int = 2  # When rollout_n=2, creates a single pair (matches mathematical assumption)
 
 
 @dataclass
@@ -1410,13 +1410,13 @@ def compute_contrastive_advantages_with_src(
     device: torch.device
 ) -> Tuple[torch.Tensor, Dict[str, Any]]:
     """
-    计算Contrastive GRPO优势函数（与标准版本相同）
+Compute Contrastive GRPO advantage function (same as standard version).
     
-    数学公式：
+    Formulas:
     A+ = √(n-/n+) for r_i = 1
     A- = -√(n+/n-) for r_i = 0
     
-    这部分与标准Contrastive GRPO完全相同
+    This is identical to standard Contrastive GRPO
     
     Theoretical Assumption for GRPO-SRC:
     ------------------------------------
@@ -1440,7 +1440,7 @@ def compute_contrastive_advantages_with_src(
     n = len(group_indices)
     assert n == len(rewards), "Group indices and rewards must have same length"
     
-    # 分区
+    # Partition into positive/negative
     positive_mask = (rewards > 0.5).float()
     negative_mask = (rewards <= 0.5).float()
     
@@ -1456,7 +1456,7 @@ def compute_contrastive_advantages_with_src(
         'is_degenerate': False
     }
     
-    # 退化情况
+    # Degenerate case: all rewards are the same
     if n_positive == 0 or n_negative == 0:
         if config.handle_uniform_rewards:
             advantages.fill_(config.uniform_reward_advantage)
@@ -1471,7 +1471,7 @@ def compute_contrastive_advantages_with_src(
             metrics['degenerate_type'] = 'all_same_fallback'
             return advantages, metrics
     
-    # 计算对比优势
+    # Compute contrastive advantages
     advantage_positive = torch.sqrt(
         torch.tensor(n_negative / n_positive, device=device, dtype=rewards.dtype)
     )
@@ -1481,7 +1481,7 @@ def compute_contrastive_advantages_with_src(
     
     advantages = positive_mask * advantage_positive + negative_mask * advantage_negative
     
-    # 验证
+    # Verification
     if config.verify_equivalence:
         r_mean = rewards.mean()
         r_std = rewards.std() + config.epsilon
@@ -1490,7 +1490,7 @@ def compute_contrastive_advantages_with_src(
         metrics['verification_max_diff'] = max_diff
         metrics['verification_passed'] = (max_diff < 1e-5)
     
-    # 统计
+    # Statistics
     if config.log_advantage_stats:
         metrics.update({
             'adv_positive_value': advantage_positive.item(),
@@ -1510,21 +1510,21 @@ def create_self_reflective_pairs(
     rollout_n: int = 2
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """
-    创建self-reflective conditioning pairs
+Create self-reflective conditioning pairs.
     
-    对于每个组 (x, yw, yl):
-    - 正向: (x ⊕ yl) → yw  (看到错误，生成正确)
-    - 反向: (x ⊕ yw) → yl  (看到正确，识别错误)
+    For each group (x, yw, yl):
+    - Forward: (x + yl) -> yw  (see wrong answer, generate correct)
+    - Reverse: (x + yw) -> yl  (see correct answer, identify wrong)
     
-    注意：当rollout_n=2时（数学假设的基础），只选择第一个正样本和第一个负样本进行配对，
-    避免冗余信息。当rollout_n>2时，仍然遍历所有配对以充分利用信息。
+    When rollout_n=2 (mathematical assumption), only the first positive and first negative
+    sample are paired to avoid redundancy. When rollout_n>2, all pairs are enumerated.
     
     Args:
-        rollout_n: Rollout数量，当为2时只创建一对配对（符合数学假设）
+        rollout_n: Number of rollouts; when 2, creates a single pair per group.
     
     Returns:
-    - pairing_info: 配对信息和条件化的input_ids映射
-    - pairing_metrics: 配对统计信息
+    - pairing_info: Pairing info and conditioned input_ids mapping
+    - pairing_metrics: Pairing statistics
     """
     uid = batch.non_tensor_batch["uid"]
     
@@ -1543,19 +1543,18 @@ def create_self_reflective_pairs(
     response_mask = batch.batch["response_mask"]  # [batch_size, seq_len]
     attention_mask = batch.batch.get("attention_mask", response_mask)  # [batch_size, seq_len]
     
-    # 按UID分组
+    # Group by UID
     uid2indices = defaultdict(list)
     for idx, u in enumerate(uid):
         uid2indices[u].append(idx)
     
-    # 存储配对信息
     pairing_info = {
-        'conditioned_input_ids': [],  # 条件化的input_ids
-        'conditioned_attention_mask': [],  # 条件化的attention_mask
-        'conditioned_response_mask': [],  # 条件化的response_mask
-        'original_indices': [],  # 原始batch中的索引
+        'conditioned_input_ids': [],
+        'conditioned_attention_mask': [],
+        'conditioned_response_mask': [],
+        'original_indices': [],
         'conditioning_types': [],  # 'yw|yl' or 'yl|yw'
-        'pair_advantages': [],  # 对应的advantages
+        'pair_advantages': [],
     }
     
     pairing_metrics = {
@@ -1566,33 +1565,31 @@ def create_self_reflective_pairs(
         'groups_skipped': 0,
     }
     
-    # 获取tokenizer的sep token（需要从配置或模型中获取）
-    # 这里使用一个占位符，实际使用时需要从tokenizer获取
+    # Get tokenizer sep token from config (fallback to default if not set)
     sep_token_id = getattr(config, 'sep_token_id', None)
     if sep_token_id is None:
-        # 尝试从batch或配置中获取，如果没有则使用一个特殊值
-        # 注意：这需要在配置中指定或从tokenizer获取
-        sep_token_id = 2  # 常见的是2，但应该从实际tokenizer获取
+        # Default to 2 (EOS); should be set from actual tokenizer in practice
+        sep_token_id = 2
     
     for group_uid, group_indices in uid2indices.items():
         if len(group_indices) < 2:
             pairing_metrics['groups_skipped'] += 1
             continue
         
-        # 检查该group的reward std，如果std=0则跳过SRC配对（使用标准GRPO）
+        # Skip SRC pairing for groups with reward std=0 (use standard GRPO instead)
         if uid2reward_std is not None:
             reward_std = uid2reward_std.get(group_uid, None)
             if reward_std is not None and reward_std == 0:
-                # std=0，跳过SRC配对，使用标准GRPO
+                # std=0: skip SRC, fall back to standard GRPO
                 pairing_metrics['groups_skipped'] += 1
                 continue
         
         pairing_metrics['groups_processed'] += 1
         
-        # 获取组内rewards
+        # Get group rewards
         group_rewards = seq_rewards[group_indices].cpu()
         
-        # 找到正负样本
+        # Find positive and negative samples
         pos_mask = group_rewards > 0.5
         neg_mask = group_rewards <= 0.5
         
@@ -1603,7 +1600,7 @@ def create_self_reflective_pairs(
             pairing_metrics['groups_skipped'] += 1
             continue
         
-        # 计算advantages（用于配对）
+        # Compute advantages for pairing
         group_advantages, adv_metrics = compute_contrastive_advantages_with_src(
             rewards=seq_rewards[group_indices],
             group_indices=group_indices,
@@ -1611,13 +1608,13 @@ def create_self_reflective_pairs(
             device=device
         )
         
-        # 获取明确的positive和negative advantage值
-        # A_w = √(n-/n+) > 0 用于正向配对 (yw|yl)
-        # A_l = -√(n+/n-) < 0 用于反向配对 (yl|yw)
+        # Get explicit positive and negative advantage values
+        # A_w = √(n-/n+) > 0 for forward pairs (yw|yl)
+        # A_l = -√(n+/n-) < 0 for reverse pairs (yl|yw)
         advantage_positive = adv_metrics.get('adv_positive_value', None)
         advantage_negative = adv_metrics.get('adv_negative_value', None)
         
-        # 如果metrics中没有，直接从group_advantages计算
+        # If not in metrics, compute directly from group_advantages
         if advantage_positive is None or advantage_negative is None:
             n_pos = len(pos_indices)
             n_neg = len(neg_indices)
@@ -1625,22 +1622,21 @@ def create_self_reflective_pairs(
                 advantage_positive = torch.sqrt(torch.tensor(n_neg / n_pos, device=device, dtype=seq_rewards.dtype))
                 advantage_negative = -torch.sqrt(torch.tensor(n_pos / n_neg, device=device, dtype=seq_rewards.dtype))
             else:
-                # 退化情况：使用group_advantages的平均值
+                # Degenerate case: use mean of group_advantages
                 pos_advs = [group_advantages[group_indices.index(idx)] for idx in pos_indices if idx in group_indices]
                 neg_advs = [group_advantages[group_indices.index(idx)] for idx in neg_indices if idx in group_indices]
                 advantage_positive = torch.tensor(sum(pos_advs) / len(pos_advs), device=device) if pos_advs else torch.tensor(0.0, device=device)
                 advantage_negative = torch.tensor(sum(neg_advs) / len(neg_advs), device=device) if neg_advs else torch.tensor(0.0, device=device)
         
-        # 为每个正样本创建条件（yw | x, yl）
-        # 当rollout_n=2时，只选择第一个正样本和第一个负样本（符合数学假设，避免冗余）
-        # 当rollout_n>2时，遍历所有配对以充分利用信息
-        # 使用 advantage_positive (A_w > 0) 来加权正向配对
+        # Create conditioned pairs (yw | x, yl) for each positive sample
+        # rollout_n=2: single pair per group (mathematical assumption, avoids redundancy)
+        # rollout_n>2: enumerate all pairs
+        # Weight forward pairs with advantage_positive (A_w > 0)
         if rollout_n == 2:
-            # 数学假设的基础：只选择第一个正样本和第一个负样本
+            # Mathematical assumption: single pair from first positive and first negative
             if len(pos_indices) > 0 and len(neg_indices) > 0:
                 pos_idx = pos_indices[0]
                 neg_idx = neg_indices[0]
-                # 创建单个配对（避免冗余）
                 pos_seq = input_ids[pos_idx]
                 pos_attn = attention_mask[pos_idx]
                 pos_resp_mask = response_mask[pos_idx]
@@ -1655,7 +1651,7 @@ def create_self_reflective_pairs(
                 neg_resp_start = neg_resp_mask.argmax().item() if neg_resp_mask.sum() > 0 else 0
                 neg_response = neg_seq[neg_resp_start:neg_resp_end]
                 
-                # 创建条件化序列: prompt + sep + neg_response + sep + pos_response
+                # Build conditioned sequence: prompt + sep + neg_response + sep + pos_response
                 conditioned_seq = torch.cat([
                     prompt,
                     torch.tensor([sep_token_id], device=device, dtype=prompt.dtype),
@@ -1670,7 +1666,7 @@ def create_self_reflective_pairs(
                 resp_start = len(prompt) + 1 + len(neg_response) + 1
                 conditioned_resp_mask[resp_start:] = 1
                 
-                # 填充或截断
+                # Pad or truncate
                 max_seq_len = input_ids.shape[1]
                 max_conditioned_len = min(max_seq_len, 4096)
                 if len(conditioned_seq) > max_conditioned_len:
@@ -1704,28 +1700,28 @@ def create_self_reflective_pairs(
                     pairing_info['pair_advantages'].append(advantage_positive)
                 pairing_metrics['positive_conditioned'] += 1
         else:
-            # rollout_n > 2: 遍历所有配对以充分利用信息
+            # rollout_n > 2: enumerate all pos-neg pairs
             for pos_idx in pos_indices:
                 for neg_idx in neg_indices:
-                    # 提取prompt部分（response_mask之前的部分）
+                    # Extract prompt (before response_mask)
                     pos_seq = input_ids[pos_idx]
                     pos_attn = attention_mask[pos_idx]
                     pos_resp_mask = response_mask[pos_idx]
                     
-                    # 找到prompt的结束位置（response开始之前）
+                    # Find prompt end position (before response start)
                     prompt_end = pos_resp_mask.argmax().item() if pos_resp_mask.sum() > 0 else 0
                     
                     prompt = pos_seq[:prompt_end]
                     pos_response = pos_seq[prompt_end:]
                     
-                    # 获取负样本的response
+                    # Get negative sample response
                     neg_seq = input_ids[neg_idx]
                     neg_resp_mask = response_mask[neg_idx]
                     neg_resp_end = neg_resp_mask.argmax().item() + neg_resp_mask.sum().int().item() if neg_resp_mask.sum() > 0 else len(neg_seq)
                     neg_resp_start = neg_resp_mask.argmax().item() if neg_resp_mask.sum() > 0 else 0
                     neg_response = neg_seq[neg_resp_start:neg_resp_end]
                     
-                    # 创建条件化序列: prompt + sep + neg_response + sep + pos_response
+                    # Build conditioned sequence: prompt + sep + neg_response + sep + pos_response
                     conditioned_seq = torch.cat([
                         prompt,
                         torch.tensor([sep_token_id], device=device, dtype=prompt.dtype),
@@ -1734,16 +1730,16 @@ def create_self_reflective_pairs(
                         pos_response
                     ])
                     
-                    # 创建对应的attention_mask和response_mask
+                    # Create corresponding attention_mask and response_mask
                     seq_len = len(conditioned_seq)
                     conditioned_attn = torch.ones(seq_len, device=device, dtype=attention_mask.dtype)
                     
-                    # response_mask只覆盖最后的pos_response部分
+                    # response_mask covers only the final pos_response
                     conditioned_resp_mask = torch.zeros(seq_len, device=device, dtype=response_mask.dtype)
-                    resp_start = len(prompt) + 1 + len(neg_response) + 1  # 跳过prompt + sep + neg_response + sep
+                    resp_start = len(prompt) + 1 + len(neg_response) + 1
                     conditioned_resp_mask[resp_start:] = 1
                     
-                    # 填充或截断到统一长度（如果需要）
+                    # Pad or truncate to uniform length
                     # Use a more conservative limit to avoid exceeding log_prob_max_token_len_per_gpu
                     # Conditioned sequences contain two responses, so we need to cap at a reasonable length
                     max_seq_len = input_ids.shape[1]
@@ -1775,25 +1771,21 @@ def create_self_reflective_pairs(
                     pairing_info['conditioned_response_mask'].append(conditioned_resp_mask)
                     pairing_info['original_indices'].append(pos_idx)
                     pairing_info['conditioning_types'].append('yw|yl')
-                    # 正向配对使用 advantage_positive (A_w > 0): 鼓励 π(yw|x,yl)
-                    # 注意：advantages的平均处理在format_grpo_as_contrastive_with_src中进行
-                    # 这里只记录原始的advantage值（用于日志记录）
+                    # Forward pair weighted by advantage_positive (A_w > 0)
                     if isinstance(advantage_positive, torch.Tensor):
                         pairing_info['pair_advantages'].append(advantage_positive.item())
                     else:
                         pairing_info['pair_advantages'].append(advantage_positive)
                     pairing_metrics['positive_conditioned'] += 1
         
-        # 对称：为每个负样本创建条件（yl | x, yw）
-        # 当rollout_n=2时，只选择第一个正样本和第一个负样本（符合数学假设，避免冗余）
-        # 当rollout_n>2时，遍历所有配对以充分利用信息
+        # Symmetric: create conditioned pairs (yl | x, yw) for each negative sample
+        # rollout_n=2: single pair; rollout_n>2: enumerate all pairs
         if config.symmetric_conditioning:
             if rollout_n == 2:
-                # 数学假设的基础：只选择第一个正样本和第一个负样本
+                # Mathematical assumption: single pair from first positive and first negative
                 if len(pos_indices) > 0 and len(neg_indices) > 0:
                     pos_idx = pos_indices[0]
                     neg_idx = neg_indices[0]
-                    # 创建单个配对（避免冗余）
                     neg_seq = input_ids[neg_idx]
                     neg_attn = attention_mask[neg_idx]
                     neg_resp_mask = response_mask[neg_idx]
@@ -1807,7 +1799,7 @@ def create_self_reflective_pairs(
                     pos_resp_start = pos_resp_mask.argmax().item() if pos_resp_mask.sum() > 0 else 0
                     pos_response = pos_seq[pos_resp_start:]
                     
-                    # 创建条件化序列: prompt + sep + pos_response + sep + neg_response
+                    # Build conditioned sequence: prompt + sep + pos_response + sep + neg_response
                     conditioned_seq = torch.cat([
                         prompt,
                         torch.tensor([sep_token_id], device=device, dtype=prompt.dtype),
@@ -1822,7 +1814,7 @@ def create_self_reflective_pairs(
                     resp_start = len(prompt) + 1 + len(pos_response) + 1
                     conditioned_resp_mask[resp_start:] = 1
                     
-                    # 填充或截断
+                    # Pad or truncate
                     max_seq_len = input_ids.shape[1]
                     max_conditioned_len = min(max_seq_len, 4096)
                     if len(conditioned_seq) > max_conditioned_len:
@@ -1856,10 +1848,10 @@ def create_self_reflective_pairs(
                         pairing_info['pair_advantages'].append(advantage_negative)
                     pairing_metrics['negative_conditioned'] += 1
             else:
-                # rollout_n > 2: 遍历所有配对以充分利用信息
+                # rollout_n > 2: enumerate all pos-neg pairs
                 for neg_idx in neg_indices:
                     for pos_idx in pos_indices:
-                        # 提取prompt和responses
+                        # Extract prompt and responses
                         neg_seq = input_ids[neg_idx]
                         neg_attn = attention_mask[neg_idx]
                         neg_resp_mask = response_mask[neg_idx]
@@ -1873,7 +1865,7 @@ def create_self_reflective_pairs(
                         pos_resp_start = pos_resp_mask.argmax().item() if pos_resp_mask.sum() > 0 else 0
                         pos_response = pos_seq[pos_resp_start:]
                         
-                        # 创建条件化序列: prompt + sep + pos_response + sep + neg_response
+                        # Build conditioned sequence: prompt + sep + pos_response + sep + neg_response
                         conditioned_seq = torch.cat([
                             prompt,
                             torch.tensor([sep_token_id], device=device, dtype=prompt.dtype),
@@ -1888,7 +1880,7 @@ def create_self_reflective_pairs(
                         resp_start = len(prompt) + 1 + len(pos_response) + 1
                         conditioned_resp_mask[resp_start:] = 1
                         
-                        # 填充或截断
+                        # Pad or truncate
                         # Use a more conservative limit to avoid exceeding log_prob_max_token_len_per_gpu
                         max_seq_len = input_ids.shape[1]
                         max_conditioned_len = min(max_seq_len, 4096)  # Allow up to 4096 for conditioned sequences
@@ -1918,9 +1910,7 @@ def create_self_reflective_pairs(
                         pairing_info['conditioned_response_mask'].append(conditioned_resp_mask)
                         pairing_info['original_indices'].append(neg_idx)
                         pairing_info['conditioning_types'].append('yl|yw')
-                        # 反向配对使用 advantage_negative (A_l < 0): 抑制 π(yl|x,yw)
-                        # 注意：advantages的平均处理在format_grpo_as_contrastive_with_src中进行
-                        # 这里只记录原始的advantage值（用于日志记录）
+                        # Reverse pair weighted by advantage_negative (A_l < 0)
                         if isinstance(advantage_negative, torch.Tensor):
                             pairing_info['pair_advantages'].append(advantage_negative.item())
                         else:
@@ -1929,7 +1919,7 @@ def create_self_reflective_pairs(
     
     pairing_metrics['total_pairs'] = len(pairing_info['original_indices'])
     
-    # 转换为tensors
+    # Convert to tensors
     if pairing_info['conditioned_input_ids']:
         pairing_info['conditioned_input_ids'] = torch.stack(pairing_info['conditioned_input_ids'])
         pairing_info['conditioned_attention_mask'] = torch.stack(pairing_info['conditioned_attention_mask'])
@@ -1938,7 +1928,7 @@ def create_self_reflective_pairs(
         # pair_advantages is a list of Python floats, convert to tensor
         pairing_info['pair_advantages'] = torch.tensor(pairing_info['pair_advantages'], device=device, dtype=seq_rewards.dtype)
     else:
-        # 如果没有配对，返回空tensors
+        # No pairs created; return empty tensors
         pairing_info['conditioned_input_ids'] = torch.empty((0, input_ids.shape[1]), device=device, dtype=input_ids.dtype)
         pairing_info['conditioned_attention_mask'] = torch.empty((0, input_ids.shape[1]), device=device, dtype=attention_mask.dtype)
         pairing_info['conditioned_response_mask'] = torch.empty((0, input_ids.shape[1]), device=device, dtype=response_mask.dtype)
@@ -1954,16 +1944,16 @@ def format_grpo_as_contrastive_with_src(
     device: torch.device
 ) -> Tuple[DataProto, Dict[str, Any]]:
     """
-    将GRPO重塑为Contrastive GRPO with Self-Reflective Conditioning格式
+Reshape GRPO into Contrastive GRPO with Self-Reflective Conditioning format.
     
-    核心思想：
-    1. 使用Contrastive GRPO的优势函数
-    2. 如果启用SRC，创建条件化的输入对
-    3. 在后续的log_prob计算中，使用条件化的输入
+    Core idea:
+    1. Use Contrastive GRPO advantage function
+    2. If SRC is enabled, create conditioned input pairs
+    3. Use conditioned inputs for subsequent log_prob computation
     
     Returns:
-    - batch: 修改后的batch，包含条件化的输入（如果启用SRC）
-    - metrics: 统计信息
+    - batch: Modified batch with conditioned inputs (if SRC enabled)
+    - metrics: Aggregate statistics
     """
     uid = batch.non_tensor_batch["uid"]
     
@@ -1972,12 +1962,12 @@ def format_grpo_as_contrastive_with_src(
     else:
         raise ValueError("token_level_rewards not found in batch")
     
-    # 按UID分组
+    # Group by UID
     uid2indices = defaultdict(list)
     for idx, u in enumerate(uid):
         uid2indices[u].append(idx)
     
-    # 计算advantages（与标准contrastive GRPO相同）
+    # Compute advantages (same as standard contrastive GRPO)
     batch_size = len(uid)
     advantages = torch.zeros(batch_size, device=device, dtype=seq_rewards.dtype)
     
@@ -2001,7 +1991,7 @@ def format_grpo_as_contrastive_with_src(
     group_sizes = []
     pos_neg_ratios = []
     
-    # 处理每个组，计算advantages
+    # Process each group and compute advantages
     for group_uid, group_indices in uid2indices.items():
         G = len(group_indices)
         group_sizes.append(G)
@@ -2038,15 +2028,15 @@ def format_grpo_as_contrastive_with_src(
     if pos_neg_ratios:
         aggregate_metrics['avg_pos_neg_ratio'] = np.mean(pos_neg_ratios)
     
-    # 如果启用SRC，创建self-reflective pairs
-    # 但只对std>0的group使用SRC，std=0的group使用标准GRPO
+    # If SRC is enabled, create self-reflective pairs
+    # Only use SRC for groups with std>0; groups with std=0 fall back to standard GRPO
     src_metrics = {}
     if config.use_self_reflection:
-        # 计算每个group的reward std，用于判断是否使用SRC
+        # Compute reward std per group to decide whether to use SRC
         uid2reward_std = {}
         uid2reward_mean = {}
-        std_zero_all_one_count = 0  # std=0且全为1的数量
-        std_zero_all_zero_count = 0  # std=0且全为0的数量
+        std_zero_all_one_count = 0
+        std_zero_all_zero_count = 0
         
         for group_uid, group_indices in uid2indices.items():
             if len(group_indices) < 2:
@@ -2057,27 +2047,25 @@ def format_grpo_as_contrastive_with_src(
             uid2reward_std[group_uid] = reward_std
             uid2reward_mean[group_uid] = reward_mean
             
-            # 记录std=0时的统计信息
+            # Track degenerate groups (std=0)
             if reward_std == 0:
-                if reward_mean > 0.5:  # 全为1
+                if reward_mean > 0.5:
                     std_zero_all_one_count += 1
-                else:  # 全为0
+                else:
                     std_zero_all_zero_count += 1
         
-        # 只对std>0的group创建SRC配对
-        # 获取rollout数量（从batch的meta_info或配置中获取）
-        # 注意：这里需要从外部传入rollout_n，因为batch中可能没有这个信息
-        # 默认使用2（符合数学假设）
+        # Create SRC pairs only for groups with std>0
+        # Get rollout count from config (defaults to 2)
         rollout_n = getattr(config, 'rollout_n', 2)
         pairing_info, pairing_metrics = create_self_reflective_pairs(
             batch=batch,
             config=config,
             device=device,
-            uid2reward_std=uid2reward_std,  # 传入std信息，用于过滤
-            rollout_n=rollout_n  # 传入rollout数量
+            uid2reward_std=uid2reward_std,
+            rollout_n=rollout_n
         )
         
-        # 将配对信息存储到batch.meta_info中，供后续使用
+        # Store pairing info in batch.meta_info for downstream use
         batch.meta_info['src_pairing_info'] = pairing_info
         
         src_metrics = {
@@ -2087,14 +2075,14 @@ def format_grpo_as_contrastive_with_src(
             'src/groups_processed': pairing_metrics['groups_processed'],
             'src/groups_skipped': pairing_metrics['groups_skipped'],
             'src/std_zero_groups': std_zero_all_one_count + std_zero_all_zero_count,
-            'src/std_zero_all_one': std_zero_all_one_count,  # std=0且全为1的数量
-            'src/std_zero_all_zero': std_zero_all_zero_count,  # std=0且全为0的数量
+            'src/std_zero_all_one': std_zero_all_one_count,
+            'src/std_zero_all_zero': std_zero_all_zero_count,
         }
     
     # For GRPO-SRC: We keep the original batch structure, so advantages are computed on the original batch.
     # No mapping needed - the batch structure remains the same as standard GRPO.
     
-    # 广播advantages到token level
+    # Broadcast advantages to token level
     if "response_mask" in batch.batch:
         response_mask = batch.batch["response_mask"]
         seq_len = response_mask.shape[1]
@@ -2108,7 +2096,7 @@ def format_grpo_as_contrastive_with_src(
     else:
         raise ValueError("response_mask not found in batch. Cannot broadcast advantages.")
     
-    # 合并metrics
+    # Merge metrics
     aggregate_metrics.update(src_metrics)
     
     return batch, aggregate_metrics
