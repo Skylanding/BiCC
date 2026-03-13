@@ -1,0 +1,36 @@
+hydra:
+  searchpath:
+    - file://verl/trainer/config
+
+defaults:
+  - ppo_trainer
+  - _self_
+
+data:
+  gen_batch_size: ${data.train_batch_size}
+
+reward_model:
+  reward_manager: dapo
+  overlong_buffer: 
+    enable: False # We try to avoid forgetting to set enable
+    len: 0
+    penalty_factor: 0.0
+    log: False
+
+algorithm:
+  filter_groups:
+    _target_: verl.trainer.config.FilterGroupsConfig
+    enable: False # We try to avoid forgetting to set enable
+    metric: null # acc / score / seq_reward / seq_final_reward / ...
+    max_num_gen_batches: 0 # Non-positive values mean no upper limit
+
+trainer:
+  project_name: verl-dapo
+
+# OnePassRefine configuration
+onepass_refine:
+  enable: False  # Set to True to enable OnePassRefine mode
+  num_refinements_per_prompt: 4  # Number of refinements y2 per prompt
+  draft_source: "ref"  # Source for drafts y1: "ref", "old", "current"
+  use_negative_draft_push: False  # Push down drafts with negative advantage
+  use_consistency_kl: False  # Use consistency KL between π(·|x) and π(·|x,y1)

@@ -1,0 +1,99 @@
+hydra:
+  searchpath:
+    - file://verl/trainer/config
+
+defaults:
+  - ppo_trainer
+  - _self_
+
+# Basic trainer configuration
+trainer:
+  project_name: verl-refine-dapo
+  experiment_name: "refine_dapo"
+  logger: "wandb"
+  total_epochs: 10
+  test_freq: 100
+  save_freq: 500
+  critic_warmup: 0
+  balance_batch: true
+  val_before_train: true
+  val_only: false
+  val_num_examine: 960  # Number of validation samples to print detailed logs for
+
+# Data configuration
+data:
+  gen_batch_size: ${data.train_batch_size}
+  train_batch_size: 6  # Changed from 8 to 6 to be divisible by 3 (number of GPUs)
+  max_response_length: 512
+
+# Algorithm configuration
+algorithm:
+  adv_estimator: "REMAX"
+  gamma: 0.99
+  lam: 0.95
+  use_kl_in_reward: true
+  kl_penalty: 0.1
+  filter_groups:
+    _target_: verl.trainer.config.FilterGroupsConfig
+    enable: False # We try to avoid forgetting to set enable
+    metric: null # acc / score / seq_reward / seq_final_reward / ...
+    max_num_gen_batches: 0 # Non-positive values mean no upper limit
+
+# Actor rollout configuration
+actor_rollout_ref:
+  rollout:
+    n: 4  # Number of responses per prompt
+    skip_rollout: false
+  actor:
+    loss_agg_mode: "mean"
+
+# Reward model configuration
+reward_model:
+  reward_manager: dapo
+  overlong_buffer: 
+    enable: False # We try to avoid forgetting to set enable
+    len: 0
+    penalty_factor: 0.0
+    log: False
+
+# Contrastive GRPO configuration (optional)
+contrastive_grpo:
+  enable: false  # Set to True to enable Contrastive GRPO (DPO-like format)
+  epsilon: 1e-8
+  handle_uniform_rewards: true
+  uniform_reward_advantage: 0.0
+  log_advantage_stats: true
+  log_contrastive_structure: true
+  verify_equivalence: false
+
+# Contrastive GRPO with Self-Reflective Conditioning (GRPO-SRC) configuration (optional)
+contrastive_grpo_src:
+  enable: false  # Set to True to enable GRPO-SRC (requires contrastive_grpo.enable=True)
+  epsilon: 1e-8
+  use_self_reflection: true
+  symmetric_conditioning: true
+  handle_uniform_rewards: true
+  uniform_reward_advantage: 0.0
+  log_advantage_stats: true
+  log_src_metrics: true
+  verify_equivalence: false
+
+# Model configuration
+model:
+  name: "your_model_name"
+  # Add your model-specific configuration here
+
+# Reference policy configuration (optional)
+ref_policy:
+  enable: false  # Set to True if using KL penalty or reference policy for comparison
+  # Add your reference policy configuration here if needed
+
+# Critic configuration (optional)
+critic:
+  enable: false
+  # Add your critic configuration here
+
+# Global profiler configuration
+global_profiler:
+  steps: null
+  profile_continuous_steps: false
