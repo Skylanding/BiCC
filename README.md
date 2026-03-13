@@ -1,6 +1,6 @@
 <p align="center">
   <h1 align="center">
-  BICC: Binary Iterative Contrastive Conditioning<br>
+  When Right Meets Wrong: Bilateral Context Conditioning with Reward-Confidence Correction for GRPO<br>
   <sub><sub></sub></sub>
   </h1>
   <p align="center">
@@ -34,6 +34,7 @@ pip install vllm
 pip install flash-attn --no-build-isolation
 ```
 
+**Requirements:** Python >= 3.10, CUDA >= 12.1, 8x GPUs.
 
 ## Training
 
@@ -57,7 +58,7 @@ bash recipe/dapo/run_bicc_dapo.sh
 
 The script invokes `python3 -m recipe.dapo.main_refine_dapo` with the full set of Hydra overrides. It will:
 1. Initialize Ray and distributed FSDP workers (8 GPUs by default).
-2. Run the `RefineDAPOTrainer.fit()` loop: rollout generation → reward computation → BICC advantage estimation → actor update.
+2. Run the `RefineDAPOTrainer.fit()` loop: rollout generation → reward computation → BiCC advantage estimation → actor update.
 3. Save checkpoints every 50 steps and run validation every 100 steps.
 4. Log to both console and Weights & Biases.
 
@@ -65,10 +66,10 @@ The script invokes `python3 -m recipe.dapo.main_refine_dapo` with the full set o
 
 | Category | Parameter | Value |
 |----------|-----------|-------|
-| BICC | `contrastive_grpo.enable` | `True` |
-| BICC | `contrastive_grpo_src.enable` | `True` |
-| BICC | `algorithm.adv_estimator` | `remax` |
-| BICC | `algorithm.kl_penalty` | `0.1` |
+| BiCC | `contrastive_grpo.enable` | `True` |
+| BiCC | `contrastive_grpo_src.enable` | `True` |
+| BiCC | `algorithm.adv_estimator` | `remax` |
+| BiCC | `algorithm.kl_penalty` | `0.1` |
 | Data | `data.max_prompt_length` / `max_response_length` | `2048` / `3072` |
 | Data | `data.train_batch_size` | `16` |
 | Data | `actor_rollout_ref.rollout.n` | `8` |
@@ -130,52 +131,18 @@ python -m evaluation.run_eval \
 
 > Replace `global_step_XXX` with the actual checkpoint step you want to evaluate.
 
-## Method
-
-BICC consists of two complementary modules:
-
-**BICC (Binary Iterative Contrastive Conditioning)** — Partitions rollout responses into positive (r=1) and negative (r=0) groups within each prompt, then computes contrastive advantages:
-
-$$A^+ = \sqrt{\frac{n^-}{n^+}}, \quad A^- = -\sqrt{\frac{n^+}{n^-}}$$
-
-This formulation reveals GRPO's inherent contrastive structure and enables explicit control over the positive/negative balance in the policy gradient.
-
-**RCC (Reward-Confidence Correction)** — Corrects the policy gradient baseline using the covariance between rewards and log-probability ratios:
-
-$$b^* \approx \mathbb{E}[R] + 2 \cdot \text{Cov}(R, \delta), \quad \delta = \log \pi_\theta - \log \pi_{\text{ref}}$$
-
-Implemented as token-level covariance clipping (`clip_cov` / `kl_cov`) in `core_algos.py`. When Cov(R, δ) > 0, the correction raises the baseline, preventing high-confidence correct samples from dominating the gradient update.
-
-### Trainer Inheritance
-
-```
-RayPPOTrainer                  verl/trainer/ppo/ray_trainer.py
-  └── RayDAPOTrainer           recipe/dapo/dapo_ray_trainer.py
-      └── RefineDAPOTrainer    recipe/dapo/refine_dapo_trainer.py
-```
-
 ## Project Structure
 
 ```
 BiCC/
-├── pyproject.toml
-├── setup.py
-├── requirements.txt
-├── LICENSE
-├── recipe/
-│   └── dapo/
-│       ├── run_bicc_dapo.sh           # Training entry script
-│       ├── main_refine_dapo.py        # Python entry point
-│       ├── refine_dapo_trainer.py     # RefineDAPOTrainer (BICC + RCC)
-│       ├── dapo_ray_trainer.py        # RayDAPOTrainer
-│       └── config/
-│           └── refine.yaml            # Hydra config
-└── verl/                              # verl framework (core dependencies)
-    ├── trainer/ppo/                   # PPO trainer, core_algos, metrics
-    ├── workers/                       # Actor, Critic, Rollout, Reward workers
-    ├── utils/                         # Utilities
-    ├── models/                        # Model definitions
-    └── single_controller/             # Ray controller
+├── data/                    # Training & evaluation data
+├── docs/                    # Documentation
+├── examples/                # Data preprocessing examples
+├── recipe/                  # Training recipes
+│   └── dapo/                # BiCC-DAPO recipe
+├── scripts/                 # Utility scripts
+├── tests/                   # Unit tests
+└── verl/                    # verl framework core
 ```
 
 ## Citation
@@ -183,6 +150,10 @@ BiCC/
 ```bibtex
 <!-- TODO -->
 ```
+
+## Acknowledgements
+
+Built on top of [verl](https://github.com/verl-project/verl) (Volcano Engine Reinforcement Learning for LLMs).
 
 ## License
 
