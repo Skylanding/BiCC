@@ -34,7 +34,6 @@ pip install vllm
 pip install flash-attn --no-build-isolation
 ```
 
-**Requirements:** Python >= 3.10, CUDA >= 12.1, 8x GPUs.
 
 ## Training
 
@@ -64,51 +63,21 @@ The script invokes `python3 -m recipe.dapo.main_refine_dapo` with the full set o
 
 ### Key Parameters
 
-```bash
-python3 -m recipe.dapo.main_refine_dapo \
-    # ── BICC Core ──
-    contrastive_grpo.enable=True \
-    contrastive_grpo_src.enable=True \
-    contrastive_grpo_src.use_self_reflection=True \
-    contrastive_grpo_src.symmetric_conditioning=True \
-    algorithm.adv_estimator=remax \
-    algorithm.use_kl_in_reward=True \
-    algorithm.kl_penalty=0.1 \
-    # ── Data ──
-    data.max_prompt_length=2048 \
-    data.max_response_length=3072 \
-    data.gen_batch_size=16 \
-    data.train_batch_size=16 \
-    actor_rollout_ref.rollout.n=8 \
-    # ── Actor / Optimization ──
-    actor_rollout_ref.actor.optim.lr=1e-6 \
-    actor_rollout_ref.actor.optim.lr_warmup_steps=10 \
-    actor_rollout_ref.actor.optim.weight_decay=0.1 \
-    actor_rollout_ref.actor.clip_ratio_low=0.2 \
-    actor_rollout_ref.actor.clip_ratio_high=0.28 \
-    actor_rollout_ref.actor.grad_clip=1.0 \
-    actor_rollout_ref.actor.loss_agg_mode="token-mean" \
-    actor_rollout_ref.actor.ppo_mini_batch_size=8 \
-    # ── Rollout (vLLM) ──
-    actor_rollout_ref.rollout.name=vllm \
-    actor_rollout_ref.rollout.temperature=0.2 \
-    actor_rollout_ref.rollout.top_p=0.7 \
-    actor_rollout_ref.rollout.gpu_memory_utilization=0.60 \
-    # ── Reward ──
-    reward_model.reward_manager=dapo \
-    reward_model.overlong_buffer.enable=True \
-    reward_model.overlong_buffer.len=1700 \
-    # ── FSDP ──
-    actor_rollout_ref.actor.fsdp_config.param_offload=True \
-    actor_rollout_ref.actor.fsdp_config.optimizer_offload=True \
-    actor_rollout_ref.actor.fsdp_config.fsdp_size=8 \
-    # ── Trainer ──
-    trainer.n_gpus_per_node=8 \
-    trainer.nnodes=1 \
-    trainer.save_freq=50 \
-    trainer.test_freq=100 \
-    trainer.total_epochs=1
-```
+| Category | Parameter | Value |
+|----------|-----------|-------|
+| BICC | `contrastive_grpo.enable` | `True` |
+| BICC | `contrastive_grpo_src.enable` | `True` |
+| BICC | `algorithm.adv_estimator` | `remax` |
+| BICC | `algorithm.kl_penalty` | `0.1` |
+| Data | `data.max_prompt_length` / `max_response_length` | `2048` / `3072` |
+| Data | `data.train_batch_size` | `16` |
+| Data | `actor_rollout_ref.rollout.n` | `8` |
+| Optim | `actor.optim.lr` | `1e-6` |
+| Optim | `actor.clip_ratio_low` / `high` | `0.2` / `0.28` |
+| Rollout | `rollout.name` / `temperature` / `top_p` | `vllm` / `0.2` / `0.7` |
+| Trainer | `n_gpus_per_node` / `nnodes` | `8` / `1` |
+
+See `recipe/dapo/run_bicc_dapo.sh` for the complete list of parameters.
 
 ## Evaluation
 
