@@ -38,24 +38,31 @@ pip install flash-attn --no-build-isolation
 
 ## Training
 
-Edit paths in `recipe/dapo/run_bicc_dapo.sh`:
+### Step 1: Configure Paths
+
+Open `recipe/dapo/run_bicc_dapo.sh` and set the following variables to your local paths:
 
 ```bash
 export MODEL_PATH="/path/to/your/base_model"   # e.g., Qwen3-4B
-export TRAIN_FILE="/path/to/train.parquet"
-export TEST_FILE="/path/to/val.parquet"
-export CKPTS_DIR="/path/to/checkpoints"
+export TRAIN_FILE="/path/to/train.parquet"      # training data (parquet with a `prompt` column)
+export TEST_FILE="/path/to/val.parquet"         # validation data (same format)
+export CKPTS_DIR="/path/to/checkpoints"         # checkpoint output directory
 ```
 
-Then launch:
+### Step 2: Launch Training
 
 ```bash
+cd BiCC
 bash recipe/dapo/run_bicc_dapo.sh
 ```
 
-### Key Parameters
+The script invokes `python3 -m recipe.dapo.main_refine_dapo` with the full set of Hydra overrides. It will:
+1. Initialize Ray and distributed FSDP workers (8 GPUs by default).
+2. Run the `RefineDAPOTrainer.fit()` loop: rollout generation → reward computation → BICC advantage estimation → actor update.
+3. Save checkpoints every 50 steps and run validation every 100 steps.
+4. Log to both console and Weights & Biases.
 
-The full command is in `recipe/dapo/run_bicc_dapo.sh`. Key parameters:
+### Key Parameters
 
 ```bash
 python3 -m recipe.dapo.main_refine_dapo \
@@ -103,21 +110,80 @@ python3 -m recipe.dapo.main_refine_dapo \
     trainer.total_epochs=1
 ```
 
-## Architecture
+## Evaluation
+
+We evaluate on three math reasoning benchmarks: **AIME 2024**, **AIME 2025**, and **MATH-500**.
+
+### AIME 2024
+
+```bash
+cd BiCC
+
+python -m evaluation.run_eval \
+    --model_path="${CKPTS_DIR}/actor/global_step_XXX" \
+    --benchmark=aime24 \
+    --output_dir="results/aime24" \
+    --temperature=0.6 \
+    --top_p=0.95 \
+    --n=1 \
+    --max_tokens=3072
+```
+
+### AIME 2025
+
+```bash
+cd BiCC
+
+python -m evaluation.run_eval \
+    --model_path="${CKPTS_DIR}/actor/global_step_XXX" \
+    --benchmark=aime25 \
+    --output_dir="results/aime25" \
+    --temperature=0.6 \
+    --top_p=0.95 \
+    --n=1 \
+    --max_tokens=3072
+```
+
+### MATH-500
+
+```bash
+cd BiCC
+
+python -m evaluation.run_eval \
+    --model_path="${CKPTS_DIR}/actor/global_step_XXX" \
+    --benchmark=math500 \
+    --output_dir="results/math500" \
+    --temperature=0.6 \
+    --top_p=0.95 \
+    --n=1 \
+    --max_tokens=3072
+```
+
+> Replace `global_step_XXX` with the actual checkpoint step you want to evaluate.
+
+## Method
+
+BICC consists of two complementary modules:
+
+**BICC (Binary Iterative Contrastive Conditioning)** — Partitions rollout responses into positive (r=1) and negative (r=0) groups within each prompt, then computes contrastive advantages:
+
+$$A^+ = \sqrt{\frac{n^-}{n^+}}, \quad A^- = -\sqrt{\frac{n^+}{n^-}}$$
+
+This formulation reveals GRPO's inherent contrastive structure and enables explicit control over the positive/negative balance in the policy gradient.
+
+**RCC (Reward-Confidence Correction)** — Corrects the policy gradient baseline using the covariance between rewards and log-probability ratios:
+
+$$b^* \approx \mathbb{E}[R] + 2 \cdot \text{Cov}(R, \delta), \quad \delta = \log \pi_\theta - \log \pi_{\text{ref}}$$
+
+Implemented as token-level covariance clipping (`clip_cov` / `kl_cov`) in `core_algos.py`. When Cov(R, δ) > 0, the correction raises the baseline, preventing high-confidence correct samples from dominating the gradient update.
+
+### Trainer Inheritance
 
 ```
 RayPPOTrainer                  verl/trainer/ppo/ray_trainer.py
   └── RayDAPOTrainer           recipe/dapo/dapo_ray_trainer.py
       └── RefineDAPOTrainer    recipe/dapo/refine_dapo_trainer.py
 ```
-
-**Contrastive GRPO** — Partitions rollout responses into positive (r=1) and negative (r=0) groups:
-  A⁺ = √(n⁻/n⁺),  A⁻ = −√(n⁺/n⁻)
-
-**Self-Reflective Conditioning (SRC)** — Conditions generation on alternative responses:
-  Forward: log π(y_w | x, y_l),  Reverse: log π(y_l | x, y_w)
-
-**Reward-Confidence Correction (RCC)** — Token-level covariance clipping (`clip_cov` / `kl_cov`) in `core_algos.py` to prevent high-confidence samples from dominating gradients.
 
 ## Project Structure
 
@@ -131,7 +197,7 @@ BiCC/
 │   └── dapo/
 │       ├── run_bicc_dapo.sh           # Training entry script
 │       ├── main_refine_dapo.py        # Python entry point
-│       ├── refine_dapo_trainer.py     # RefineDAPOTrainer
+│       ├── refine_dapo_trainer.py     # RefineDAPOTrainer (BICC + RCC)
 │       ├── dapo_ray_trainer.py        # RayDAPOTrainer
 │       └── config/
 │           └── refine.yaml            # Hydra config
