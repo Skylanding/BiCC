@@ -147,7 +147,12 @@ BiCC/
 ## Citation
 
 ```bibtex
-<!-- TODO -->
+@inproceedings{Li2026WhenRM,
+  title={When Right Meets Wrong: Bilateral Context Conditioning with Reward-Confidence Correction for GRPO},
+  author={Yu Li and Tian Lan and Zhengling Qi},
+  year={2026},
+  url={https://api.semanticscholar.org/CorpusID:286519842}
+}
 ```
 
 ## Acknowledgements
