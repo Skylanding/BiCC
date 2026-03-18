@@ -4,11 +4,14 @@
   <sub><sub></sub></sub>
   </h1>
   <p align="center">
-    <!-- Authors -->
-    <!-- <strong>Author Name</strong><sup>1</sup> -->
+    <strong>Yu Li</strong><sup>1</sup>
+    &nbsp;&nbsp;
+    <strong>Tian Lan</strong><sup>1✉</sup>
+    &nbsp;&nbsp;
+    <strong>Zhengling Qi</strong><sup>2✉</sup>
     <br>
-    <!-- Affiliations -->
-    <!-- <sup>1</sup>Institution -->
+    <sup>1</sup>Department of ECE, George Washington University&nbsp;&nbsp;
+    <sup>2</sup>School of Business, George Washington University
     <br>
     <a href='http://arxiv.org/abs/2603.13134'><img src='https://img.shields.io/badge/ArXiv-2603.13134-red'></a>&nbsp;
     <a href='https://github.com/Skylanding/BiCC'><img src='https://img.shields.io/badge/GitHub-Code-black?logo=github'></a>&nbsp;
