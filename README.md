@@ -10,7 +10,7 @@
     <!-- Affiliations -->
     <!-- <sup>1</sup>Institution -->
     <br>
-    <!-- <a href=''><img src='https://img.shields.io/badge/ArXiv-XXXX.XXXXX-red'></a>&nbsp; -->
+    <!-- <a href=''><img src='http://arxiv.org/abs/2603.13134'></a>&nbsp; -->
     <a href='https://github.com/Skylanding/BiCC'><img src='https://img.shields.io/badge/GitHub-Code-black?logo=github'></a>&nbsp;
     <br>
     <img src="figure/overview.png">
