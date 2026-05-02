@@ -4,19 +4,7 @@
   <sub><sub></sub></sub>
   </h1>
   <p align="center">
-    <strong>Yu Li</strong><sup>1</sup>
-    &nbsp;&nbsp;
-    <strong>Tian Lan</strong><sup>1✉</sup>
-    &nbsp;&nbsp;
-    <strong>Zhengling Qi</strong><sup>2✉</sup>
-    <br>
-    George Washington University
-    <br>
-    <sup>1</sup>Department of ECE&nbsp;&nbsp;
-    <sup>2</sup>School of Business
-    <br>
-    <a href='http://arxiv.org/abs/2603.13134'><img src='https://img.shields.io/badge/ArXiv-2603.13134-red'></a>&nbsp;
-    <a href='https://github.com/Skylanding/BiCC'><img src='https://img.shields.io/badge/GitHub-Code-black?logo=github'></a>&nbsp;
+    <!-- Author information removed for anonymous review -->
     <br>
     <img src="figure/overview.png">
   </p>
@@ -29,7 +17,7 @@ Group Relative Policy Optimization (GRPO) has emerged as an effective method for
 ## Installation
 
 ```bash
-git clone https://github.com/Skylanding/BiCC.git
+git clone https://github.com/<anonymous>/BiCC.git
 cd BiCC
 
 pip install -e .
@@ -151,14 +139,16 @@ BiCC/
 
 ## Citation
 
+<!-- Citation removed for anonymous review -->
+<!--
 ```bibtex
-@inproceedings{Li2026WhenRM,
+@inproceedings{Anonymous2026,
   title={When Right Meets Wrong: Bilateral Context Conditioning with Reward-Confidence Correction for GRPO},
-  author={Yu Li and Tian Lan and Zhengling Qi},
+  author={Anonymous},
   year={2026},
-  url={https://api.semanticscholar.org/CorpusID:286519842}
 }
 ```
+-->
 
 ## Acknowledgements
 

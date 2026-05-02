@@ -58,7 +58,7 @@ setup(
     version=__version__,
     package_dir={"": "."},
     packages=find_packages(where="."),
-    url="https://github.com/Skylanding/BiCC",
+    url="https://github.com/<anonymous>/BiCC",
     license="Apache 2.0",
     description="BICC: Binary Iterative Contrastive Conditioning for LLM RL Training",
     install_requires=install_requires,
